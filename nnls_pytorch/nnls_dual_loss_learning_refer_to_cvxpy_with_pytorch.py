@@ -8,12 +8,6 @@ import cvxpy as cp
 
 # --------------------- Select device ---------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Using device:", device)
-
-script_name = os.path.splitext(os.path.basename(__file__))[0]
-script_dir = os.path.dirname(os.path.abspath(__file__))
-fig_dir = os.path.join(script_dir, script_name)
-os.makedirs(fig_dir, exist_ok=True)
 
 
 # ==========================================================
@@ -27,7 +21,7 @@ def solve_nnls_cvxpy(A: torch.Tensor, b: torch.Tensor) -> Tuple[torch.Tensor, fl
     x = cp.Variable(n, nonneg=True)
     obj = 0.5 * cp.sum_squares(A_np @ x - b_np)
     constraints = [x >= 0]
-    prob = cp.Problem(cp.Minimize(obj),constraints)
+    prob = cp.Problem(cp.Minimize(obj), constraints)
 
     # Try OSQP first; if it fails, fall back
     last_err = None
@@ -42,15 +36,16 @@ def solve_nnls_cvxpy(A: torch.Tensor, b: torch.Tensor) -> Tuple[torch.Tensor, fl
     if x.value is None:
         raise RuntimeError(f"CVXPY failed to solve NNLS. Last error: {last_err}")
 
-    x_star = torch.from_numpy(np.asarray(x.value).reshape(-1)).to(A.device, dtype=A.dtype)
+    x_star = torch.from_numpy(np.asarray(x.value).reshape(-1)).to(
+        A.device, dtype=A.dtype
+    )
     mu_dual = constraints[0].dual_value
     if mu_dual is not None:
         mu_dual = np.maximum(0.0, A.T @ (A @ x_star - b))
     # KKT-reconstructed mu (solver-agnostic)
 
-
     obj_norm = torch.linalg.norm(A @ x_star - b).item()  # ||Ax-b||_2
-    return x_star, obj_norm,mu_dual
+    return x_star, obj_norm, mu_dual
 
 
 # ==========================================================
@@ -63,13 +58,12 @@ def recover_x_from_mu_active_set(
     tau: float = 1e-10,
     max_refine: int = 100,
 ) -> np.ndarray:
-
     m, n = A.shape
     mu = mu.reshape(-1)
     assert mu.shape[0] == n
 
     # initial free set: where mu ~ 0
-    F = (mu <= tau)
+    F = mu <= tau
     x = np.zeros(n)
 
     for _ in range(max_refine):
@@ -132,8 +126,8 @@ def nnls_dual_admm(
         return torch.cholesky_solve(rhs.unsqueeze(1), L_chol).squeeze(1)
 
     lam = torch.zeros(m, dtype=A.dtype, device=A.device)
-    mu  = torch.zeros(n, dtype=A.dtype, device=A.device)
-    v   = torch.zeros(n, dtype=A.dtype, device=A.device)
+    mu = torch.zeros(n, dtype=A.dtype, device=A.device)
+    v = torch.zeros(n, dtype=A.dtype, device=A.device)
 
     # (optional) record some primal KKT proxies using recovered x occasionally
     kkt_primal_hist: List[float] = []
@@ -165,27 +159,31 @@ def nnls_dual_admm(
         # thresholds
         a = torch.linalg.norm(AT @ lam)
         c = torch.linalg.norm(mu)
-        e_pri = (n ** 0.5) * eps_abs + eps_rel * torch.max(a, c)
-        e_dual = (n ** 0.5) * eps_abs + eps_rel * torch.linalg.norm(rho * v)
+        e_pri = (n**0.5) * eps_abs + eps_rel * torch.max(a, c)
+        e_dual = (n**0.5) * eps_abs + eps_rel * torch.linalg.norm(rho * v)
 
         if r_norm <= float(e_pri) and s_norm <= float(e_dual):
             if verbose:
-                print(f"[ADMM] Converged at iter {k+1} (r={r_norm:.3e}, s={s_norm:.3e}).")
+                print(
+                    f"[ADMM] Converged at iter {k + 1} (r={r_norm:.3e}, s={s_norm:.3e})."
+                )
             break
 
     # ---- Recover primal x from mu via active-set ----
     A_np = A.detach().cpu().numpy()
     b_np = b.detach().cpu().numpy()
     mu_np = mu.detach().cpu().numpy()
-    x_np = recover_x_from_mu_active_set(A_np, b_np, mu_np, tau=tau_recover, max_refine=200)
+    x_np = recover_x_from_mu_active_set(
+        A_np, b_np, mu_np, tau=tau_recover, max_refine=200
+    )
     x = torch.from_numpy(x_np).to(device=A.device, dtype=A.dtype)
 
     # compute KKT residual components for primal NNLS
     with torch.no_grad():
         grad = AT @ (A @ x - b)  # should be >=0
         primal_violation = torch.clamp(-x, min=0.0)
-        dual_violation   = torch.clamp(-grad, min=0.0)
-        compl_violation  = x * grad
+        dual_violation = torch.clamp(-grad, min=0.0)
+        compl_violation = x * grad
         kkt_primal_hist.append(torch.linalg.norm(primal_violation).item())
         kkt_station_hist.append(torch.linalg.norm(dual_violation).item())
         kkt_compl_hist.append(torch.linalg.norm(compl_violation).item())
@@ -218,6 +216,7 @@ def lagrangian(
     r = A.T @ lam - mu
     return 0.5 * torch.dot(lam, lam) + torch.dot(b, lam) + torch.dot(z, r)
 
+
 @torch.no_grad()
 def proj_nonneg_(x: torch.Tensor):
     x.clamp_(min=0.0)
@@ -233,17 +232,14 @@ def learning_nnls_dual_by_backprop(
     steps: int = 50_000,
     eps: float = 1e-6,
     rho: float = 1.0,
-
     check_every: int = 200,
     min_improve: float = 1e-3,
     patience: int = 1500,
     lr_decay: float = 0.5,
     min_lr: float = 1e-7,
-
     # CVXPY reference solution (optimal)
     x_ref: torch.Tensor = None,
     obj_ref: float = None,
-
     # active-set recovery params
     tau_recover: float = 1e-10,
 ):
@@ -254,17 +250,15 @@ def learning_nnls_dual_by_backprop(
     if x_ref is not None:
         x_ref = x_ref.to(device, dtype=A.dtype)
 
-
     A_np = A.detach().cpu().numpy()
     b_np = b.detach().cpu().numpy()
 
     lam = torch.nn.Parameter(0.1 * torch.randn(m, dtype=A.dtype, device=device))
-    mu  = torch.nn.Parameter(torch.rand(n, dtype=A.dtype, device=device))
-    z   = torch.nn.Parameter(torch.zeros(n, dtype=A.dtype, device=device))
+    mu = torch.nn.Parameter(torch.rand(n, dtype=A.dtype, device=device))
+    z = torch.nn.Parameter(torch.zeros(n, dtype=A.dtype, device=device))
 
     opt_primal = torch.optim.Adam(
-        [{"params": [lam], "lr": lr_lam},
-         {"params": [mu],  "lr": lr_mu}]
+        [{"params": [lam], "lr": lr_lam}, {"params": [mu], "lr": lr_mu}]
     )
     opt_dual = torch.optim.Adam([z], lr=lr_z)
 
@@ -302,18 +296,18 @@ def learning_nnls_dual_by_backprop(
         if (k + 1) % 2000 == 0:
             for g in opt_primal.param_groups:
                 g["lr"] = max(g["lr"] * lr_decay, min_lr)
-            #print("delay",k)
         # ---- 3) stopping on constraint residual ----
         with torch.no_grad():
             r = A.T @ lam - mu
             r_norm = torch.linalg.norm(r).item()
 
-
         with torch.no_grad():
             if (k + 1) % check_every == 0:
                 # Recover x from current mu (active-set)
                 mu_np = mu.detach().cpu().numpy()
-                x_np = recover_x_from_mu_active_set(A_np, b_np, mu_np, tau=tau_recover, max_refine=200)
+                x_np = recover_x_from_mu_active_set(
+                    A_np, b_np, mu_np, tau=tau_recover, max_refine=200
+                )
                 x_k = torch.from_numpy(x_np).to(device=device, dtype=A.dtype)
 
                 # KKT for primal NNLS
@@ -354,7 +348,9 @@ def learning_nnls_dual_by_backprop(
     # final recover x from mu
     with torch.no_grad():
         mu_np = mu.detach().cpu().numpy()
-        x_np = recover_x_from_mu_active_set(A_np, b_np, mu_np, tau=tau_recover, max_refine=200)
+        x_np = recover_x_from_mu_active_set(
+            A_np, b_np, mu_np, tau=tau_recover, max_refine=200
+        )
         x_final = torch.from_numpy(x_np).to(device=device, dtype=A.dtype)
 
     return (
@@ -375,6 +371,13 @@ def learning_nnls_dual_by_backprop(
 # 3) Main script: multiple (m, n) sizes + plotting
 # ==========================================================
 if __name__ == "__main__":
+    print("Using device:", device)
+
+    script_name = os.path.splitext(os.path.basename(__file__))[0]
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    fig_dir = os.path.join(script_dir, script_name)
+    os.makedirs(fig_dir, exist_ok=True)
+
     torch.manual_seed(0)
     np.random.seed(0)
 
@@ -385,20 +388,20 @@ if __name__ == "__main__":
         (120, 80),
         (150, 100),
     ]
-    lr_rate = [1e-2,1e-2,8e-3,8e-3,5e-3]
+    lr_rate = [1e-2, 1e-2, 8e-3, 8e-3, 5e-3]
     # Record KKT residuals for each method
     admm_kkt_primal_all = {}
-    admm_kkt_stat_all   = {}
-    admm_kkt_comp_all   = {}
-    bp_kkt_primal_all   = {}
-    bp_kkt_stat_all     = {}
-    bp_kkt_comp_all     = {}
+    admm_kkt_stat_all = {}
+    admm_kkt_comp_all = {}
+    bp_kkt_primal_all = {}
+    bp_kkt_stat_all = {}
+    bp_kkt_comp_all = {}
 
     # Record BP training gaps/dist relative to CVXPY optimal
-    bp_gap_all  = {}   # | ||Ax_bp - b|| - ||Ax_cvx - b|| |
-    bp_dist_all = {}   # ||x_bp - x_cvx||
+    bp_gap_all = {}  # | ||Ax_bp - b|| - ||Ax_cvx - b|| |
+    bp_dist_all = {}  # ||x_bp - x_cvx||
     i = 0
-    for (m, n) in sizes:
+    for m, n in sizes:
         print(f"\n=== Problem size m={m}, n={n} ===")
         A = torch.randn(m, n, device=device, dtype=torch.float32)
         x_true = torch.rand(n, device=device, dtype=torch.float32)
@@ -408,7 +411,7 @@ if __name__ == "__main__":
         # ---------- CVXPY optimal reference ----------
         A_cvx = A.detach().cpu().double()
         b_cvx = b.detach().cpu().double()
-        x_cvx, obj_cvx,mu_cvx = solve_nnls_cvxpy(A_cvx, b_cvx)
+        x_cvx, obj_cvx, mu_cvx = solve_nnls_cvxpy(A_cvx, b_cvx)
         x_cvx = x_cvx.to(device=device, dtype=A.dtype)
         mu_cvx = mu_cvx.to(device=device, dtype=A.dtype)
 
@@ -416,30 +419,44 @@ if __name__ == "__main__":
 
         # ---------- ADMM (dual) + recover x from mu ----------
         out_admm = nnls_dual_admm(
-            A, b, rho=2.0, max_iter=20000,
-            eps_abs=1e-6, eps_rel=1e-6, verbose=False,
+            A,
+            b,
+            rho=2.0,
+            max_iter=20000,
+            eps_abs=1e-6,
+            eps_rel=1e-6,
+            verbose=False,
             tau_recover=1e-6,
         )
 
         x_admm = out_admm["x"].to(device=device, dtype=A.dtype)
         admm_obj = torch.linalg.norm(A @ x_admm - b).item()
-        print(f"[ADMM m={m},n={n}] ||Ax-b||={admm_obj:.6f}, iters={int(out_admm['iters'])}")
+        print(
+            f"[ADMM m={m},n={n}] ||Ax-b||={admm_obj:.6f}, iters={int(out_admm['iters'])}"
+        )
 
         admm_kkt_primal_all[(m, n)] = out_admm["kkt_primal_hist"]
-        admm_kkt_stat_all[(m, n)]   = out_admm["kkt_station_hist"]
-        admm_kkt_comp_all[(m, n)]   = out_admm["kkt_compl_hist"]
+        admm_kkt_stat_all[(m, n)] = out_admm["kkt_station_hist"]
+        admm_kkt_comp_all[(m, n)] = out_admm["kkt_compl_hist"]
 
         # ---------- Backprop-based dual learning (recover x from mu active-set) ----------
         (
-            lam, mu, z, x_bp,
-            kkt_bp_primal, kkt_bp_stat, kkt_bp_comp,
-            obj_hist, gap_hist, dist_hist
+            lam,
+            mu,
+            z,
+            x_bp,
+            kkt_bp_primal,
+            kkt_bp_stat,
+            kkt_bp_comp,
+            obj_hist,
+            gap_hist,
+            dist_hist,
         ) = learning_nnls_dual_by_backprop(
             A,
             b,
             lr_lam=lr_rate[i],
             lr_mu=lr_rate[i],
-            lr_z=lr_rate[i]/10,
+            lr_z=lr_rate[i] / 10,
             steps=50_000,
             eps=5e-4,
             rho=1,
@@ -450,18 +467,19 @@ if __name__ == "__main__":
             obj_ref=obj_cvx,
             tau_recover=1e-10,
         )
-        i = i+1
+        i = i + 1
         bp_obj = torch.linalg.norm(A @ x_bp.to(A.dtype).to(device) - b).item()
-        print(f"[BP   m={m},n={n}] ||Ax-b||={bp_obj:.6f}, ||x_bp - x_cvx||="
-              f"{torch.linalg.norm(x_bp.to(device) - x_cvx).item():.3e} "
-              f"||mu_bp - mu_cvx||={torch.linalg.norm(mu.to(device) - mu_cvx).item():.3e}"
-              )
+        print(
+            f"[BP   m={m},n={n}] ||Ax-b||={bp_obj:.6f}, ||x_bp - x_cvx||="
+            f"{torch.linalg.norm(x_bp.to(device) - x_cvx).item():.3e} "
+            f"||mu_bp - mu_cvx||={torch.linalg.norm(mu.to(device) - mu_cvx).item():.3e}"
+        )
 
         bp_kkt_primal_all[(m, n)] = kkt_bp_primal
-        bp_kkt_stat_all[(m, n)]   = kkt_bp_stat
-        bp_kkt_comp_all[(m, n)]   = kkt_bp_comp
+        bp_kkt_stat_all[(m, n)] = kkt_bp_stat
+        bp_kkt_comp_all[(m, n)] = kkt_bp_comp
 
-        bp_gap_all[(m, n)]  = gap_hist
+        bp_gap_all[(m, n)] = gap_hist
         bp_dist_all[(m, n)] = dist_hist
 
     # ----------------- BP training gap relative to CVXPY -----------------
@@ -470,14 +488,20 @@ if __name__ == "__main__":
     for (m, n), hist in bp_gap_all.items():
         if len(hist) == 0:
             continue
-        iters = np.arange(1, len(hist) + 1) * 100  # because we record every check_every=200
+        iters = (
+            np.arange(1, len(hist) + 1) * 100
+        )  # because we record every check_every=200
         y = hist.numpy()
         plt.plot(iters, y, label=f"m={m}, n={n}")
 
     plt.xlabel("Iteration", fontsize=11, fontweight="bold")
     plt.ylabel("| ||Ax_bp - b|| - ||Ax_opt - b|| |", fontsize=11, fontweight="bold")
     plt.tick_params(axis="both", which="major", labelsize=11)
-    plt.title("Distance to CVXPY Optimal Value During Learning", fontsize=11, fontweight="bold")
+    plt.title(
+        "Distance to CVXPY Optimal Value During Learning",
+        fontsize=11,
+        fontweight="bold",
+    )
     plt.legend()
     plt.grid(True, linestyle="--", linewidth=0.5)
     fig1_name = f"{script_name}_objective_value_distance"
@@ -496,7 +520,11 @@ if __name__ == "__main__":
     plt.xlabel("Iteration", fontsize=11, fontweight="bold")
     plt.ylabel("||x_bp - x_opt||_2", fontsize=11, fontweight="bold")
     plt.tick_params(axis="both", which="major", labelsize=11)
-    plt.title("Distance to CVXPY Optimal Solution During Learning", fontsize=11, fontweight="bold")
+    plt.title(
+        "Distance to CVXPY Optimal Solution During Learning",
+        fontsize=11,
+        fontweight="bold",
+    )
     plt.legend()
     plt.grid(True, linestyle="--", linewidth=0.5)
     fig2_name = f"{script_name}_solution_distance"
@@ -516,11 +544,13 @@ if __name__ == "__main__":
 
     plt.yscale("log")
     plt.xlabel("Iteration", fontsize=11, fontweight="bold")
-    plt.ylabel("| ||Ax_bp - b|| - ||Ax_opt - b|| | (log scale)",
-               fontsize=11, fontweight="bold")
+    plt.ylabel(
+        "| ||Ax_bp - b|| - ||Ax_opt - b|| | (log scale)", fontsize=11, fontweight="bold"
+    )
     plt.tick_params(axis="both", which="major", labelsize=11)
-    plt.title("Distance to CVXPY Optimal Value (Log Scale)",
-              fontsize=11, fontweight="bold")
+    plt.title(
+        "Distance to CVXPY Optimal Value (Log Scale)", fontsize=11, fontweight="bold"
+    )
     plt.legend()
     plt.grid(True, which="major", linestyle="--", linewidth=0.5)
 
@@ -539,11 +569,11 @@ if __name__ == "__main__":
 
     plt.yscale("log")
     plt.xlabel("Iteration", fontsize=11, fontweight="bold")
-    plt.ylabel("||x_bp - x_opt||_2 (log scale)",
-               fontsize=11, fontweight="bold")
+    plt.ylabel("||x_bp - x_opt||_2 (log scale)", fontsize=11, fontweight="bold")
     plt.tick_params(axis="both", which="major", labelsize=11)
-    plt.title("Distance to CVXPY Optimal Solution (Log Scale)",
-              fontsize=11, fontweight="bold")
+    plt.title(
+        "Distance to CVXPY Optimal Solution (Log Scale)", fontsize=11, fontweight="bold"
+    )
     plt.legend()
     plt.grid(True, which="major", linestyle="--", linewidth=0.5)
 

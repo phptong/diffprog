@@ -7,8 +7,6 @@ import torch.nn.functional as F
 # 1. PDHG / Chambolle–Pock solver
 # ============================
 class StiglerPDHGSolver(nn.Module):
-
-
     def __init__(self, n_iters=2000, tau=None, sigma=None, theta=1.0):
         super().__init__()
         self.n_iters = n_iters
@@ -17,7 +15,6 @@ class StiglerPDHGSolver(nn.Module):
         self.theta = theta
 
     def _compute_stepsizes(self, A):
-
         with torch.no_grad():
             svals = torch.linalg.svdvals(A)
             L = svals.max().item()  # ≈ ||A||_2
@@ -28,15 +25,12 @@ class StiglerPDHGSolver(nn.Module):
         return tau, sigma
 
     def prox_f(self, v, tau, c):
-
         return F.relu(v - tau * c)
 
     def prox_g_conj(self, y, sigma, b):
-
         return torch.minimum(torch.zeros_like(y), y - sigma * b)
 
     def forward(self, c, A, b, x0=None, y0=None):
-
         device = c.device
         dtype = c.dtype
         m, n = A.shape
@@ -69,7 +63,6 @@ class StiglerPDHGSolver(nn.Module):
 
             # extrapolation
             x_bar = x + theta * (x - x_old)
-
 
         lam = F.relu(-y)
 
@@ -104,11 +97,17 @@ def validate_stigler_solution(c, A, b, x, lam, nu, verbose=True):
     if verbose:
         print("===== Stigler PDHG Solution Validation =====")
         print("Primal feasibility:")
-        print(f"  Max nutrient violation  max(ReLU(b - A x))  : {primal_violation_nutrient:.4e}")
-        print(f"  Max nonneg violation    max(ReLU(-x))      : {primal_violation_nonneg:.4e}")
+        print(
+            f"  Max nutrient violation  max(ReLU(b - A x))  : {primal_violation_nutrient:.4e}"
+        )
+        print(
+            f"  Max nonneg violation    max(ReLU(-x))      : {primal_violation_nonneg:.4e}"
+        )
         print()
         print("Dual feasibility:")
-        print(f"  Max λ < 0 violation     max(ReLU(-λ))      : {dual_violation_lam:.4e}")
+        print(
+            f"  Max λ < 0 violation     max(ReLU(-λ))      : {dual_violation_lam:.4e}"
+        )
         print(f"  Max ν < 0 violation     max(ReLU(-ν))      : {dual_violation_nu:.4e}")
         print(f"  Max dual residual       ||A^T λ + ν - c||∞ : {dual_residual:.4e}")
         print()
@@ -188,11 +187,12 @@ if __name__ == "__main__":
     b = b.requires_grad_()
     c = c.requires_grad_()
 
-
     solver = StiglerPDHGSolver(n_iters=150000, tau=None, sigma=None, theta=1)
     x_star, lam_star, nu_star = solver(c, A, b)
 
-    metrics = validate_stigler_solution(c, A, b, x_star, lam_star, nu_star, verbose=True)
+    metrics = validate_stigler_solution(
+        c, A, b, x_star, lam_star, nu_star, verbose=True
+    )
 
     x_cvx, obj_cvx = compare_with_cvxpy(c, A, b)
     print("Torch primal obj:", metrics["primal_obj"])
@@ -202,8 +202,3 @@ if __name__ == "__main__":
     total_cost = torch.dot(c, x_star)
     loss = total_cost + 10.0 * penalty
     loss.backward()
-    #
-    # print("\nBackward done.")
-    # print("dLoss/dc:", c.grad)
-    # print("dLoss/dA:", A.grad)
-    # print("dLoss/db:", b.grad)

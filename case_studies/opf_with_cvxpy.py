@@ -4,8 +4,8 @@ import torch
 # 0. Utilities: evaluate objective / constraints (for reporting)
 # ============================================================
 
-def evaluate_all(v, data):
 
+def evaluate_all(v, data):
     G = data["G"]
     Gv = G @ v
     p = v * Gv
@@ -53,6 +53,7 @@ def evaluate_all(v, data):
 # ==============================
 # 1. Generate test case
 # ==============================
+
 
 def build_test_case(
     N=5,
@@ -126,7 +127,6 @@ def build_test_case(
     }
     return data
 
-import torch
 
 def build_test_case_guaranteed_feasible(
     N=5,
@@ -134,19 +134,19 @@ def build_test_case_guaranteed_feasible(
     V_max=1.5,
     seed=0,
     load_positive=True,
-    load_margin=0.8,   # d_i = load_margin * p_i(v*)
-    gen_margin=0.2,    # p_cap_i = p_i(v*) + gen_margin
+    load_margin=0.8,  # d_i = load_margin * p_i(v*)
+    gen_margin=0.2,  # p_cap_i = p_i(v*) + gen_margin
 ):
-    '''
+    """
 
     Build a feasiable sample
-    '''
+    """
     torch.manual_seed(seed)
 
     nodes = torch.arange(N)
 
     # chain edges
-    edges_i = torch.arange(N-1, dtype=torch.long)
+    edges_i = torch.arange(N - 1, dtype=torch.long)
     edges_j = torch.arange(1, N, dtype=torch.long)
     E = N - 1
 
@@ -173,38 +173,31 @@ def build_test_case_guaranteed_feasible(
     load_idx = torch.arange(num_load, dtype=torch.long)
     gen_idx = torch.arange(num_load, N, dtype=torch.long)
 
-
     I_max = 1.0 + 0.5 * torch.rand(E)  # (1, 1.5)
 
-
     dv_max = I_max / g_ij
-
 
     v_star = torch.empty(N)
     v_star[0] = 0.5 * (V_min + V_max)
 
-
     sign = 1.0
     for k in range(E):
         step = 0.5 * dv_max[k].item()
-        v_star[k+1] = v_star[k] + sign * step
+        v_star[k + 1] = v_star[k] + sign * step
 
-        if v_star[k+1] > V_max:
+        if v_star[k + 1] > V_max:
             sign = -1.0
-            v_star[k+1] = min(V_max, v_star[k] + sign * step)
-        if v_star[k+1] < V_min:
+            v_star[k + 1] = min(V_max, v_star[k] + sign * step)
+        if v_star[k + 1] < V_min:
             sign = 1.0
-            v_star[k+1] = max(V_min, v_star[k] + sign * step)
-
+            v_star[k + 1] = max(V_min, v_star[k] + sign * step)
 
     v_star = torch.clamp(v_star, V_min, V_max)
 
     p_star = v_star * (G @ v_star)
 
-
     d = torch.zeros(N)
     p_cap = torch.zeros(N)
-
 
     if load_positive:
         v_star2 = v_star.clone()
@@ -224,17 +217,16 @@ def build_test_case_guaranteed_feasible(
         v_star = v_star2
         p_star = p_star2
 
-
         d[load_idx] = load_margin * torch.clamp(p_star[load_idx], min=1e-6)
     else:
         d[load_idx] = load_margin * torch.clamp(p_star[load_idx], min=0.0)
 
-
     p_cap[gen_idx] = p_star[gen_idx] + gen_margin
     p_cap[gen_idx] = torch.clamp(p_cap[gen_idx], min=1e-6)
 
-
-    I_max = torch.maximum(I_max, torch.abs(g_ij * (v_star[edges_i] - v_star[edges_j])) + 1e-6)
+    I_max = torch.maximum(
+        I_max, torch.abs(g_ij * (v_star[edges_i] - v_star[edges_j])) + 1e-6
+    )
 
     data = {
         "N": N,
@@ -250,13 +242,15 @@ def build_test_case_guaranteed_feasible(
         "gen_idx": gen_idx,
         "d": d,
         "p_cap": p_cap,
-        "I_max": I_max
+        "I_max": I_max,
     }
     return data
+
 
 # ==============================
 # 2. Lagrangian  L(v, λ, γ, μ)
 # ==============================
+
 
 def lagrangian(v, lam, gam, mu, data):
     """
@@ -298,8 +292,10 @@ def lagrangian(v, lam, gam, mu, data):
 # 3. Projections
 # ==============================
 
+
 def project_voltage(v, V_lower, V_upper):
     return torch.clamp(v, V_lower, V_upper)
+
 
 def project_nonnegative(x):
     return torch.clamp(x, min=0.0)
@@ -309,89 +305,10 @@ def project_nonnegative(x):
 # 4. Primal–Dual projected gradient
 # ==============================
 
-# def primal_dual_solve(
-#     data,
-#     num_iters=500,
-#     tau=0.1,
-#     eta=0.1,
-#     verbose=True,
-# ):
-#     N = data["N"]
-#     V_lower = data["V_lower"]
-#     V_upper = data["V_upper"]
-#     load_idx = data["load_idx"]
-#     gen_idx = data["gen_idx"]
-#
-#     # init
-#     v = (V_lower + V_upper) / 2.0
-#     v = v.clone().detach().requires_grad_(True)
-#
-#     lam = torch.zeros(N)
-#     gam = torch.zeros(N)
-#     mu = torch.zeros(data["E"])
-#
-#     history = {"f": [], "lambda": [], "gamma": [], "mu": []}
-#
-#     for k in range(num_iters):
-#         # primal step
-#         if v.grad is not None:
-#             v.grad.zero_()
-#
-#         L, f, p, abs_current = lagrangian(v, lam, gam, mu, data)
-#         L.backward()
-#
-#         with torch.no_grad():
-#             v_new = v - tau * v.grad
-#             v_new = project_voltage(v_new, V_lower, V_upper)
-#
-#         v = v_new.clone().detach().requires_grad_(True)
-#
-#         # dual step uses v^{k+1}
-#         with torch.no_grad():
-#             Gv = data["G"] @ v
-#             p_new = v * Gv
-#
-#             lam_new = lam.clone()
-#             lam_new[load_idx] = project_nonnegative(
-#                 lam[load_idx] + eta * (data["d"][load_idx] - p_new[load_idx])
-#             )
-#
-#             gam_new = gam.clone()
-#             gam_new[gen_idx] = project_nonnegative(
-#                 gam[gen_idx] + eta * (p_new[gen_idx] - data["p_cap"][gen_idx])
-#             )
-#
-#             v_i = v[data["edges_i"]]
-#             v_j = v[data["edges_j"]]
-#             current_ij = data["g_ij"] * (v_i - v_j)
-#             abs_current_ij = torch.abs(current_ij)
-#
-#             mu_new = project_nonnegative(
-#                 mu + eta * (abs_current_ij - data["I_max"])
-#             )
-#
-#             lam, gam, mu = lam_new, gam_new, mu_new
-#
-#         history["f"].append(f.item())
-#         history["lambda"].append(lam.clone())
-#         history["gamma"].append(gam.clone())
-#         history["mu"].append(mu.clone())
-#
-#         if verbose and (k % 50 == 0 or k == num_iters - 1):
-#             stats = evaluate_all(v.detach(), data)
-#             print(
-#                 f"Iter {k:4d}: f={stats['f']:.6f}, "
-#                 f"V_viol={stats['max_v_viol']:.2e}, "
-#                 f"load_viol={stats['max_load_viol']:.2e}, "
-#                 f"gen_viol={stats['max_gen_viol']:.2e}, "
-#                 f"line_viol={stats['max_line_viol']:.2e}"
-#             )
-#
-#     return v.detach(), lam, gam, mu, history
-
 # ============================== #
 # 4. Primal–Dual projected gradient (PURE PyTorch, no autograd)
 # ============================== #
+
 
 def primal_dual_solve(
     data,
@@ -421,7 +338,7 @@ def primal_dual_solve(
     v = (V_lower + V_upper) / 2.0
     lam = torch.zeros(N, dtype=v.dtype, device=v.device)
     gam = torch.zeros(N, dtype=v.dtype, device=v.device)
-    mu  = torch.zeros(data["E"], dtype=v.dtype, device=v.device)
+    mu = torch.zeros(data["E"], dtype=v.dtype, device=v.device)
 
     history = {"f": [], "lambda": [], "gamma": [], "mu": []}
 
@@ -437,7 +354,7 @@ def primal_dual_solve(
         # combine as a_i:
         a = torch.zeros_like(v)
         a[load_idx] = -lam[load_idx]
-        a[gen_idx]  =  gam[gen_idx]
+        a[gen_idx] = gam[gen_idx]
 
         # q(v) = sum_i a_i v_i (Gv)_i = v^T diag(a) G v
         # grad q = (diag(a) G + G diag(a)) v
@@ -491,9 +408,7 @@ def primal_dual_solve(
             current_ij = g_ij * (vi - vj)
             abs_current_ij = torch.abs(current_ij)
 
-            mu_new = project_nonnegative(
-                mu + eta * (abs_current_ij - I_max)
-            )
+            mu_new = project_nonnegative(mu + eta * (abs_current_ij - I_max))
 
             lam, gam, mu = lam_new, gam_new, mu_new
 
@@ -518,6 +433,7 @@ def primal_dual_solve(
 # ============================================================
 # 5. CVXPY baselines (DCP-safe): objective via incidence matrix
 # ============================================================
+
 
 def _build_weighted_incidence(data):
     """
@@ -567,7 +483,8 @@ def cvxpy_baseline_qp(data, solver="OSQP", verbose=False):
 
     cons = [v >= V_lower, v <= V_upper]
     for k in range(E):
-        i = int(edges_i[k]); j = int(edges_j[k])
+        i = int(edges_i[k])
+        j = int(edges_j[k])
         cons.append(cp.abs(g_ij[k] * (v[i] - v[j])) <= I_max[k])
 
     prob = cp.Problem(obj, cons)
@@ -590,6 +507,7 @@ def cvxpy_baseline_qp(data, solver="OSQP", verbose=False):
 
 def _build_Pi_matrices(G_torch):
     import numpy as np
+
     G = G_torch.detach().cpu().numpy()
     N = G.shape[0]
     P = []
@@ -649,7 +567,8 @@ def cvxpy_baseline_sca(
 
         # line limits
         for k in range(E):
-            i = int(edges_i[k]); j = int(edges_j[k])
+            i = int(edges_i[k])
+            j = int(edges_j[k])
             cons.append(cp.abs(g_ij[k] * (v[i] - v[j])) <= I_max[k])
 
         # linearized load constraints: p_lin >= d
@@ -695,19 +614,19 @@ def cvxpy_baseline_sca(
 
 if __name__ == "__main__":
     data = build_test_case(N=5, V_min=0.9, V_max=1.2, seed=0)
-    #data = build_test_case_guaranteed_feasible(N=20, V_min=0.6, V_max=1.5, seed=0)
 
     print("=== Primal–Dual (PyTorch autograd) ===")
     v_pd, lam_opt, gam_opt, mu_opt, history = primal_dual_solve(
         data, num_iters=8000, tau=0.06, eta=0.06, verbose=True
     )
     stats_pd = evaluate_all(v_pd, data)
-    print(f"[PD] f={stats_pd['f']:.6f}, "
-          f"V_viol={stats_pd['max_v_viol']:.2e}, "
-          f"load_viol={stats_pd['max_load_viol']:.2e}, "
-          f"gen_viol={stats_pd['max_gen_viol']:.2e}, "
-          f"line_viol={stats_pd['max_line_viol']:.2e}")
-
+    print(
+        f"[PD] f={stats_pd['f']:.6f}, "
+        f"V_viol={stats_pd['max_v_viol']:.2e}, "
+        f"load_viol={stats_pd['max_load_viol']:.2e}, "
+        f"gen_viol={stats_pd['max_gen_viol']:.2e}, "
+        f"line_viol={stats_pd['max_line_viol']:.2e}"
+    )
 
     print("\n=== CVXPY Baseline 1: SCA (linearize p_i constraints) ===")
     try:
@@ -721,12 +640,13 @@ if __name__ == "__main__":
         )
         stats_sca = evaluate_all(v_sca, data)
         print("[CVX-SCA] status:", status_sca)
-        print(f"[CVX-SCA] f={stats_sca['f']:.6f}, "
-              f"V_viol={stats_sca['max_v_viol']:.2e}, "
-              f"load_viol={stats_sca['max_load_viol']:.2e}, "
-              f"gen_viol={stats_sca['max_gen_viol']:.2e}, "
-              f"line_viol={stats_sca['max_line_viol']:.2e}")
-        print(f"||v_cvx - v_pd||={torch.linalg.norm(v_sca-v_pd):6e}")
+        print(
+            f"[CVX-SCA] f={stats_sca['f']:.6f}, "
+            f"V_viol={stats_sca['max_v_viol']:.2e}, "
+            f"load_viol={stats_sca['max_load_viol']:.2e}, "
+            f"gen_viol={stats_sca['max_gen_viol']:.2e}, "
+            f"line_viol={stats_sca['max_line_viol']:.2e}"
+        )
+        print(f"||v_cvx - v_pd||={torch.linalg.norm(v_sca - v_pd):6e}")
     except Exception as e:
         print("CVXPY-SCA failed:", e)
-

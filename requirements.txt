@@ -1,0 +1,5 @@
+numpy
+torch>=2.5.1
+cvxpy
+ecos
+matplotlib
