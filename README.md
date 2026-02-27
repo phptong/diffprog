@@ -16,6 +16,7 @@ The following software and libraries are required:
 
 
 ### Repository Structure
+```
 ├── nnls_first_order_methods/
 │   └── nnls_with_pgd_admm_pdhg_comparison.py
 │       (Compares PGD, PDHG, and ADMM for solving the NNLS problem.)
@@ -47,7 +48,7 @@ The following software and libraries are required:
     │   (Linear program solved via CVXPYLayers with gradient backpropagation.)
     └── lrmp_with_cvxpylayer.py
         (Differentiable LR-NNLS with Laplacian regularization using CVXPYLayers.)
-
+```
 ## Usage
 
 ### Running the Python script
@@ -72,10 +73,11 @@ The script `lrmp_with_cvx_verify_general_solution.m` is used to verify the gener
    lrmp_with_cvx_verify_general_solution
 
 ### Citing
-
+```
 @article{tao2026learning,
-  title={Learning to Optimize by Differentiable Programming},
+  title={Learning to Optimize by Differentiable Programming},  
   author={Tao, Liping and Tong, Xindi and Tan, Chee Wei},
   journal={arXiv preprint arXiv:2601.16510},
   year={2026}
+
 }
