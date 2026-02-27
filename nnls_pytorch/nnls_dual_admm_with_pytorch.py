@@ -73,7 +73,7 @@ def solve_nnls_cvxpy_baseline(
 
 
 # ============================================================
-# Dual ADMM (scaled) for your dual-min splitting form
+# Dual ADMM (scaled) for the dual-min splitting form
 # ============================================================
 
 def nnls_dual_admm(
@@ -297,5 +297,5 @@ if __name__ == "__main__":
     print(f"  iters = {int(out['iters'].item())}")
     print(f"  recovered nnz(x_rec) = {int(np.sum(x_rec > 0))}")
 
-    # ----- Dual comparison (recommended) -----
+    # ----- Dual comparison -----
     dual_comparison_report(A_np, b_np, x_star,mu_star, lam_admm, mu_admm)
