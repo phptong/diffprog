@@ -410,7 +410,7 @@ def run_experiment(m=150, n=100, sparsity=0.2,
     fig1.tight_layout()
     save_figure(fig1, out_dir, "nnls_pdg_admm_pdhg_objective_value")
 
-    # ---------------- Figure 2: Distance to x_star (CVXPY) ----------------
+    # ---------------- Figure 2: Euclidean Distance to x_star (CVXPY) ----------------
     fig2 = plt.figure(figsize=(6, 4))
     ax2 = fig2.add_subplot(1, 1, 1)
     ax2.semilogy(iters, res_pdg["dist"],  label="PDG")
@@ -419,7 +419,7 @@ def run_experiment(m=150, n=100, sparsity=0.2,
     ax2.set_xlabel("Iteration", fontsize=11, fontweight="bold")
     ax2.set_ylabel(r"$\|x_k - x_\star\|_2$", fontsize=11, fontweight="bold")
     plt.tick_params(axis="both", which="major", labelsize=11)
-    ax2.set_title("Distance to Primal Solution (CVXPY)", fontsize=11, fontweight="bold")
+    ax2.set_title("Euclidean Distance to Primal Solution (CVXPY)", fontsize=11, fontweight="bold")
     ax2.legend()
     ax2.grid(True, which='major', ls='--', alpha=0.5)
     ax2.grid(False, which='minor')
@@ -442,7 +442,7 @@ def run_experiment(m=150, n=100, sparsity=0.2,
     fig3.tight_layout()
     save_figure(fig3, out_dir, "nnls_pdg_admm_pdhg_kkt_residual")
 
-    # ---------------- Figure 4: Distance to mu_star (CVXPY) ----------------
+    # ---------------- Figure 4: Euclidean Distance to mu_star (CVXPY) ----------------
     fig4 = plt.figure(figsize=(6, 4))
     ax4 = fig4.add_subplot(1, 1, 1)
     ax4.semilogy(iters, res_pdg["dual_err"],  label="PDG")
@@ -450,7 +450,7 @@ def run_experiment(m=150, n=100, sparsity=0.2,
     ax4.semilogy(iters, res_pdhg["dual_err"], label="PDHG")
     ax4.set_xlabel("Iteration", fontsize=11, fontweight="bold")
     ax4.set_ylabel(r"$\|\mu_k - \mu_\star\|_2$", fontsize=11, fontweight="bold")
-    ax4.set_title("Distance to Dual Solution (CVXPY)", fontsize=11, fontweight="bold")
+    ax4.set_title("Euclidean Distance to Dual Solution (CVXPY)", fontsize=11, fontweight="bold")
     plt.tick_params(axis="both", which="major", labelsize=11)
     ax4.legend()
     ax4.grid(True, which='major', ls='--', alpha=0.5)
